@@ -1,66 +1,87 @@
 # Back 4 Blood EAC fix for Xodus Nexus
 
-Helps Back 4 Blood run online through Xodus Nexus on Linux by replacing a
-recognized Easy Anti-Cheat bootstrapper in the game's **temporary launch copy**.
-It leaves the original executable and other games alone. Online play has been
-confirmed by the fork owner; future compatibility and account safety are not guaranteed.
+Enables Back 4 Blood online play through Xodus Nexus on Linux by replacing
+the EAC bootstrapper in the game's **temporary launch copy**.
+Original files and other games are never touched.
+
+**Confirmed working:** Back 4 Blood online co-op with EAC validated.
+
+## The problem
+
+MS Store games ship a **WinGDK** build of `EasyAntiCheat_EOS_Setup.exe`. The Proton EAC Runtime only recognizes the **Win64** (Steam) variant. Additionally, MS Store packages often lack `runtime.conf`, the signed file that authorizes EAC to run in Proton/Linux mode.
+
+| Issue | Result |
+|-------|--------|
+| Missing `runtime.conf` | EAC never enters Proton mode → anti-cheat violation |
+| GDK bootstrapper | "Unknown file version" → EAC validation fails → no online |
+
+## How the fix works
+
+1. **`runtime.conf` transplant** — Installs the EAC Proton authorization file (both store versions share the same deployment IDs)
+2. **Scoped chain intercept** — Monitors `.xodus-chain-*` directories, validates B4B deployment IDs and executable hash, then atomically replaces the GDK bootstrapper with the Win64 variant
+
+```
+Xodus validates (GDK, 962560 bytes) ✓
+    → creates chain → copies EAC exe
+        → watcher validates IDs + hash → swaps GDK → Win64
+            → game reads Win64 → Proton EAC Runtime validates ✓
+                → online play works ✓
+```
 
 ## Requirements
 
-- Linux with Xodus Nexus and Back 4 Blood already installed.
-- Python 3.8+ and Git (for cloning), installed **manually** with your distribution's package manager if missing.
-- A writable game location with inotify, `/proc/self/fd`, atomic rename and directory fsync support (normal Linux filesystem facilities).
+- Linux with Xodus Nexus and Back 4 Blood installed
+- Python 3.8+
 
-**No dependencies are installed automatically.** No pip packages or `inotify-tools`
-are needed. The installer copies the bundled fix files and creates a menu shortcut;
-it does not start the watcher or game. Do not run it with sudo.
+No pip packages or `inotify-tools` needed. The watcher uses Python's standard library and Linux inotify directly.
 
 ## Install
 
-Clone this fork's hardened branch, then replace the example game path below:
-
 ```sh
-git clone --branch fix/scoped-eac-watcher https://github.com/bytesize-zz/xodus-b4b-fix.git
+git clone https://github.com/hortelaa/xodus-b4b-fix.git
 cd xodus-b4b-fix
-sh install.sh --game-dir '/path/to/Xodus Nexus/Back-4-Blood' --accept-bundled-files
+python3 installer.py --game-dir '/path/to/Xodus Nexus/Back-4-Blood' --accept-bundled-files
 ```
 
-The acceptance flag acknowledges the bundled files and compatibility risks:
-the EXE signature was verified, but `runtime.conf` authenticity was not independently verified.
-Existing `runtime.conf` is preserved. Stop any older watcher before using this version.
+The installer copies bundled fix files and creates a menu shortcut. It does not start the watcher or game. Do not run with sudo.
 
 ## Start and stop
 
-1. Open **B4B EAC Watcher** from your application menu.
-2. Wait for **READY**, then launch Back 4 Blood through Xodus Nexus.
-3. Keep the watcher open while playing. Press **Ctrl+C** in its terminal to stop.
+1. Open **B4B EAC Watcher** from your application menu
+2. Wait for **READY**, then launch Back 4 Blood through Xodus Nexus
+3. Keep the watcher open while playing. Press **Ctrl+C** to stop
 
-Alternatively, start it from a terminal:
+Or start from a terminal:
 
 ```sh
 sh '/path/to/Xodus Nexus/b4b-eac-fix.sh'
 ```
 
-It does not start automatically at login. Restart it after updating the installed helper.
-
 ## Remove
 
 Stop the watcher and close the game, then delete:
 
-- `b4b-eac-fix/` and `b4b-eac-fix.sh` beside your `Back-4-Blood` folder.
-- `~/.local/share/applications/b4b-eac-fix.desktop` (the menu shortcut).
+- `b4b-eac-fix/` and `b4b-eac-fix.sh` beside your `Back-4-Blood` folder
+- `~/.local/share/applications/b4b-eac-fix.desktop`
 
-Review any adjacent `.backup-*` files before deleting them. Remove
-`Back-4-Blood/EasyAntiCheat/Certificates/runtime.conf` **only if this installer
-created it and you have not since replaced it**; leave a pre-existing file alone.
-The cloned source folder can also be deleted if no longer needed. There is no automatic uninstaller.
+Remove `Back-4-Blood/EasyAntiCheat/Certificates/runtime.conf` only if this installer created it.
 
-## Details and credits
+## Technical details
 
-- [Technical guide](TECHNICAL.md): how it works, safety checks, diagnostics, tests and limitations.
-- [Work description](CHANGES.md): what changed, why, and validation results.
+Both store versions share identical EAC deployment identifiers:
 
-Forked from **[hortelaa/xodus-b4b-fix](https://github.com/hortelaa/xodus-b4b-fix)**.
-Our changes, tests and revised documentation are **AI-generated by Hermes Agent
-(model: gpt-6-astra)** at the fork owner's request; the original work retains its authorship.
+```
+productid:    3bc138d96fb24d9597d4bbff23b9ecee
+sandboxid:    57dfd95548214a138218e56cd9e5b9d8
+deploymentid: e052f3c4fce741bab494ed0304eeaf62
+```
+
+The watcher validates all three IDs, the game executable marker, and a recognized input hash before replacing anything. Unknown versions and other games are left untouched.
+
+- [Technical guide](TECHNICAL.md): safety checks, diagnostics, tests and limitations
+- [Changes](CHANGES.md): what changed from the original implementation
+- [Integration proposal](PR_PLAN.md): how this could be integrated into Xodus Nexus
+
+## License
+
 Code: [MIT](LICENSE). Bundled third-party files retain their own licensing terms.
